@@ -35,6 +35,11 @@ class Service extends BaseService<AccessItem> {
     request(`/${SystemConst.API_BASE}/protocol/${id}/transport/${transport}`, {
       method: 'GET',
     });
+  // 获取全部集群节点信息
+  public getClusters = () =>
+    request(`/${SystemConst.API_BASE}/network/resources/clusters`, {
+      method: 'GET',
+    });
 }
 
 export default Service;

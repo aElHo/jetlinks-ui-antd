@@ -1,4 +1,4 @@
-import { Alert, Button, Card, Form, Input, Steps } from 'antd';
+import { Alert, Button, Card, Form, Input, InputNumber, message, Steps } from 'antd';
 import { useEffect, useState } from 'react';
 import styles from './index.less';
 import {
@@ -15,6 +15,65 @@ import {
 import { createSchemaField } from '@formily/react';
 import type { ISchema } from '@formily/json-schema';
 import { createForm } from '@formily/core';
+import { service } from '@/pages/link/AccessConfig';
+import { useLocation } from 'umi';
+
+type LocationType = {
+  id?: string;
+};
+
+interface ComponentProps {
+  onChange?: (data: any) => void;
+  value?: {
+    host?: string;
+    port?: number;
+  };
+}
+
+const Component = (props: ComponentProps) => {
+  const { value, onChange } = props;
+  const [data, setData] = useState<{ host?: string; port?: number } | undefined>(value);
+
+  useEffect(() => {
+    setData(value);
+  }, [value]);
+
+  return (
+    <div style={{ display: 'flex', alignItems: 'center' }}>
+      <Input
+        style={{ width: 'calc(100% - 160px)', marginRight: 10 }}
+        onChange={(e) => {
+          if (onChange) {
+            const item = {
+              ...data,
+              host: e.target.value,
+            };
+            setData(item);
+            onChange(item);
+          }
+        }}
+        value={data?.host}
+        placeholder="请输入IP"
+      />
+      <InputNumber
+        style={{ width: 150 }}
+        value={data?.port}
+        min={1}
+        max={65535}
+        onChange={(e: number) => {
+          if (onChange) {
+            const item = {
+              ...data,
+              port: e,
+            };
+            setData(item);
+            onChange(item);
+          }
+        }}
+      />
+    </div>
+  );
+};
 
 interface Props {
   change: () => void;
@@ -23,6 +82,13 @@ interface Props {
 
 const Media = (props: Props) => {
   const [current, setCurrent] = useState<number>(0);
+  const [form] = Form.useForm();
+  const [configuration, setConfiguration] = useState<any>({});
+  const [clusters, setClusters] = useState<any[]>([]);
+
+  const location = useLocation<LocationType>();
+
+  const params = new URLSearchParams(location.search);
 
   const steps = [
     {
@@ -40,13 +106,19 @@ const Media = (props: Props) => {
         AInput,
         Select,
         Radio,
+        Component,
         FormGrid,
         FormCollapse,
         ArrayCollapse,
       },
     });
 
-    const aform = createForm({});
+    const aform = createForm({
+      validateFirst: true,
+      initialValues: {
+        configuration: configuration,
+      },
+    });
 
     const clusterConfig: ISchema = {
       type: 'void',
@@ -57,20 +129,21 @@ const Media = (props: Props) => {
         columnGap: 48,
       },
       properties: {
-        serverId: {
+        clusterNodeId: {
           title: '节点名称',
-          'x-component': 'AInput',
+          'x-component': 'Select',
           'x-decorator': 'FormItem',
           'x-decorator-props': {
             gridSpan: 1,
             labelAlign: 'left',
             layout: 'vertical',
           },
+          enum: [...clusters],
         },
-        host: {
+        sip: {
           title: 'SIP 地址',
           'x-decorator': 'FormItem',
-          'x-component': 'AInput',
+          'x-component': 'Component',
           'x-decorator-props': {
             gridSpan: 1,
             labelAlign: 'left',
@@ -80,7 +153,7 @@ const Media = (props: Props) => {
           required: true,
           'x-validator': ['ipv4'],
         },
-        publicHost: {
+        public: {
           title: '公网 Host',
           'x-decorator-props': {
             gridSpan: 1,
@@ -91,17 +164,7 @@ const Media = (props: Props) => {
           required: true,
           type: 'number',
           'x-decorator': 'FormItem',
-          'x-component': 'AInput',
-          'x-validator': [
-            {
-              max: 65535,
-              message: '请输入1-65535之间的整整数',
-            },
-            {
-              min: 1,
-              message: '请输入1-65535之间的整整数',
-            },
-          ],
+          'x-component': 'Component',
         },
       },
     };
@@ -118,13 +181,16 @@ const Media = (props: Props) => {
             columnGap: 48,
           },
           properties: {
-            name: {
+            'configuration.name': {
               title: '名称',
               type: 'string',
               'x-decorator': 'FormItem',
               'x-component': 'AInput',
               'x-decorator-props': {
                 gridSpan: 1,
+              },
+              'x-component-props': {
+                placeholder: '请输入名称',
               },
               'x-validator': [
                 {
@@ -137,13 +203,16 @@ const Media = (props: Props) => {
                 },
               ],
             },
-            domain: {
+            'configuration.domain': {
               title: 'SIP 域',
               type: 'string',
               'x-decorator': 'FormItem',
               'x-component': 'AInput',
               'x-decorator-props': {
                 gridSpan: 1,
+              },
+              'x-component-props': {
+                placeholder: '请输入SIP 域',
               },
               'x-validator': [
                 {
@@ -152,11 +221,14 @@ const Media = (props: Props) => {
                 },
               ],
             },
-            sipId: {
+            'configuration.sipId': {
               title: 'SIP ID',
               type: 'string',
               'x-decorator': 'FormItem',
               'x-component': 'AInput',
+              'x-component-props': {
+                placeholder: '请输入SIP ID',
+              },
               'x-decorator-props': {
                 gridSpan: 2,
               },
@@ -167,7 +239,7 @@ const Media = (props: Props) => {
                 },
               ],
             },
-            shareCluster: {
+            'configuration.shareCluster': {
               title: '集群',
               'x-decorator': 'FormItem',
               'x-component': 'Radio.Group',
@@ -183,7 +255,7 @@ const Media = (props: Props) => {
                   '共享配置:集群下所有节点共用同一配置\r\n' + '独立配置:集群下不同节点使用不同配置',
               },
             },
-            hostPort: {
+            'configuration.hostPort': {
               type: 'object',
               'x-decorator': 'FormItem',
               'x-reactions': [
@@ -209,9 +281,9 @@ const Media = (props: Props) => {
                     columnGap: 48,
                   },
                   properties: {
-                    host: {
+                    sip: {
                       title: 'SIP 地址',
-                      'x-component': 'AInput',
+                      'x-component': 'Component',
                       'x-decorator': 'FormItem',
                       'x-decorator-props': {
                         gridSpan: 1,
@@ -219,9 +291,9 @@ const Media = (props: Props) => {
                         layout: 'vertical',
                       },
                     },
-                    publicHost: {
+                    public: {
                       title: '公网 Host',
-                      'x-component': 'AInput',
+                      'x-component': 'Component',
                       'x-decorator': 'FormItem',
                       'x-decorator-props': {
                         gridSpan: 1,
@@ -233,7 +305,7 @@ const Media = (props: Props) => {
                 },
               },
             },
-            cluster: {
+            'configuration.cluster': {
               type: 'void',
               'x-decorator': 'FormItem',
               'x-decorator-props': {
@@ -294,7 +366,19 @@ const Media = (props: Props) => {
           <FormButtonGroup.Sticky>
             <FormButtonGroup.FormItem>
               <Button
-                onClick={() => {
+                onClick={async () => {
+                  const value = await aform.submit<any>();
+                  const hostPort = { ...value.configuration.hostPort };
+                  const param = {
+                    ...value.configuration,
+                    hostPort: {
+                      host: hostPort.sip.host,
+                      port: hostPort.sip.port,
+                      publicHost: hostPort.public.host,
+                      publicPort: hostPort.public.port,
+                    },
+                  };
+                  setConfiguration(param);
                   setCurrent(1);
                 }}
               >
@@ -308,7 +392,6 @@ const Media = (props: Props) => {
   };
 
   const FinishRender = () => {
-    const [form] = Form.useForm();
     return (
       <div className={styles.view}>
         <div className={styles.info}>
@@ -332,23 +415,80 @@ const Media = (props: Props) => {
                 上一步
               </Button>
             )}
-            <Button type="primary" onClick={() => {}}>
+            <Button
+              type="primary"
+              onClick={async () => {
+                const values = await form.validateFields();
+                const param: any = {
+                  name: values.name,
+                  description: values.description,
+                };
+                if (props.data.id === 'fixed-media') {
+                  param.provider = 'fixed-media';
+                  param.transport = 'URL';
+                  param.channel = 'fixed-media';
+                } else {
+                  param.provider = 'gb28181-2016';
+                  param.transport = 'SIP';
+                  param.channel = 'gb28181';
+                  param.configuration = configuration;
+                }
+                let resp = undefined;
+                if (!!params.get('id')) {
+                  resp = await service.update({ ...param, id: params.get('id') || '' });
+                } else {
+                  resp = await service.save({ ...param });
+                }
+                if (resp.status === 200) {
+                  message.success('操作成功！');
+                  history.back();
+                }
+              }}
+            >
               保存
             </Button>
           </div>
         </div>
         <div className={styles.config}>
           <div className={styles.title}>接入方式</div>
-          <div>这里是接入方式说明</div>
+          <div>{props.data?.name}</div>
+          <div>{props.data?.description}</div>
           <div className={styles.title}>消息协议</div>
-          <div>这里是接入方式说明</div>
+          <div>{props.data.id === 'fixed-media' ? 'URL' : 'SIP'}</div>
+          <div>这里是消息协议说明</div>
         </div>
       </div>
     );
   };
 
   useEffect(() => {
-    console.log(props.data);
+    if (params.get('id')) {
+      service.detail(params.get('id') || '').then((resp) => {
+        form.setFieldsValue({
+          name: resp.result.name,
+          description: resp.result.description,
+        });
+        if (props.data.id !== 'fixed-media') {
+          setConfiguration({
+            ...resp.result.configuration,
+          });
+        }
+      });
+    }
+    if (props.data.id !== 'fixed-media') {
+      service.getClusters().then((resp: any) => {
+        if (resp.status === 200) {
+          const list = (resp?.result || []).map((item: any) => {
+            return {
+              label: item.id,
+              value: item.name,
+            };
+          });
+          setClusters(list);
+        }
+      });
+      setCurrent(0);
+    }
   }, []);
 
   return (
